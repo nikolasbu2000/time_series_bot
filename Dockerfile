@@ -1,44 +1,38 @@
-# Dockerfile
 FROM python:3.11-slim
 
-# --- System deps: R + build tools + libs for common R packages ---
+# System deps: R + build toolchain + curl/unzip (für GitHub ZIP Download)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     r-base r-base-dev \
-    git \
     build-essential \
     gfortran \
     libcurl4-openssl-dev \
     libssl-dev \
     libxml2-dev \
-    libfontconfig1-dev \
-    libfreetype6-dev \
-    libharfbuzz-dev \
-    libfribidi-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libtiff5-dev \
+    curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# --- Python deps ---
+# Python deps
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# --- R deps ---
-# jsonlite/readr/remotes first, then install apt from GitHub (CRAN sometimes missing/outdated)
-RUN Rscript -e "install.packages(c('jsonlite','readr','remotes'), repos='https://cloud.r-project.org')" \
- && Rscript -e "remotes::install_github('HugoGruson/apt')" \
- && Rscript -e "install.packages(c('rugarch','rmgarch'), repos='https://cloud.r-project.org')"
+# R base deps
+RUN Rscript -e "install.packages(c('jsonlite','readr'), repos='https://cloud.r-project.org')"
 
-# --- App code ---
+# --- apt: install from GitHub ZIP via codeload (no GitHub API) ---
+RUN curl -L -o /tmp/apt.zip https://codeload.github.com/HugoGruson/apt/zip/refs/heads/master \
+    && unzip -q /tmp/apt.zip -d /tmp \
+    && R CMD INSTALL /tmp/apt-* \
+    && rm -rf /tmp/apt.zip /tmp/apt-*
+
+# GARCH deps
+RUN Rscript -e "install.packages(c('rugarch','rmgarch'), repos='https://cloud.r-project.org')"
+
+# App code
 COPY . /app
-
-# Streamlit on Render: bind to 0.0.0.0 and use $PORT provided by Render
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 EXPOSE 8501
 
-CMD sh -c "streamlit run app.py --server.port ${PORT:-8501}"
+# Render setzt PORT; wir nutzen Shell-Expansion mit $PORT
+CMD ["sh", "-c", "streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true --browser.gatherUsageStats=false"]
