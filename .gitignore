@@ -20,3 +20,6 @@ Rplots.pdf
 
 # accidental copies
 *copy*.py
+*.log
+*.tmp
+*.csv
